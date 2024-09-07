@@ -1,18 +1,25 @@
 {
   "name": "fcc-honglydev-microservice",
   "version": "1.0.0",
-  "description": "",
   "main": "server.js",
   "scripts": {
     "start": "node --watch server.js",
+    "dev": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "hongly dev",
   "license": "ISC",
   "dependencies": {
+    "body-parser": "^1.19.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
-  }
+    "express": "^4.19.2",
+    "mongodb": "^4.17.2",
+    "mongoose": "^6.13.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "description": "This is demo of microservice."
 }

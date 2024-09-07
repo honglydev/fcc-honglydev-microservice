@@ -1,39 +1,82 @@
-// server.js
-// where your node app starts
-
-// init project
 require('dotenv').config();
-var express = require('express');
-var app = express();
 
-// enable CORS (https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
-// so that your API is remotely testable by FCC 
-var cors = require('cors');
-app.use(cors({ optionsSuccessStatus: 200 }));  // some legacy browsers choke on 204
+console.log(process.env.DB_URI)
 
-// http://expressjs.com/en/starter/static-files.html
-app.use(express.static('public'));
+const express = require('express');
+const cors = require('cors');
+const app = express();
+const mongoose = require('mongoose')
+const bodyParser = require('body-parser');
 
-// http://expressjs.com/en/starter/basic-routing.html
-app.get("/", function (req, res) {
-    res.sendFile(__dirname + '/views/index.html');
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json())
+
+// Basic Configuration
+try {
+    mongoose.connect(process.env.DB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+} catch (err) {
+    console.log(err)
+}
+
+const port = process.env.PORT || 3000;
+
+// Model
+const schema = new mongoose.Schema(
+    {
+        original: { type: String, required: true },
+        short: { type: Number, required: true }
+    }
+);
+const Url = mongoose.model('Url', schema);
+
+app.use(cors());
+
+app.use('/public', express.static(`${process.cwd()}/public`));
+
+app.get('/', function (req, res) {
+    res.sendFile(process.cwd() + '/views/index.html');
 });
 
+// Your first API endpoint
+app.get("/api/shorturl/:input", (req, res) => {
+    const input = parseInt(req.params.input);
 
-// your first API endpoint... 
-app.get("/api/hello", function (req, res) {
-    res.json({ greeting: 'hello API' });
-});
-
-app.get("/api/whoami", (req, res) => {
-    res.json({
-        "ipaddress": req.socket.remoteAddress,
-        "language": req.get('accept-language'),
-        "software": req.get('user-agent')
+    Url.findOne({ short: input }, function (err, data) {
+        if (err || data === null) return res.json("URL NOT FOUND")
+        return res.redirect(data.original);
     });
 })
 
-// listen for requests :)
-var listener = app.listen(process.env.PORT, function () {
-    console.log('Your app is listening on port ' + listener.address().port);
+app.post("/api/shorturl", async (req, res) => {
+    const bodyUrl = req.body.url;
+    let urlRegex = new RegExp(/https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/\/=]*)/);
+
+    if (!bodyUrl.match(urlRegex)) {
+        return res.json({ error: "Invalid URL" });
+    }
+
+    let index = 1;
+
+    Url.findOne({})
+        .sort({ short: 'desc' })
+        .exec((err, data) => {
+            if (err) return res.json({ error: "No url found." })
+
+            index = data !== null ? data.short + 1 : index;
+
+            Url.findOneAndUpdate(
+                { original: bodyUrl },
+                { original: bodyUrl, short: index },
+                { new: true, upsert: true },
+                (err, newUrl) => {
+                    if (!err) {
+                        res.json({ original_url: bodyUrl, short_url: newUrl.short })
+                    }
+                }
+            )
+        })
+});
+
+app.listen(port, function () {
+    console.log(`Listening on port ${port}`);
 });
