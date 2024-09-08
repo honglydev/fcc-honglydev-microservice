@@ -1,84 +1,117 @@
-require('dotenv').config();
-
-console.log(process.env.DB_URI)
-
-const express = require('express');
-const cors = require('cors');
-const app = express();
-const mongoose = require('mongoose')
+const express = require('express')
+const app = express()
+const cors = require('cors')
+const mongoose = require('mongoose');
+const ObjectId = require('mongoose').Types.ObjectId;
+const { Schema } = mongoose
 const bodyParser = require('body-parser');
-const dns = require('dns');
-const urlparser = require('url');
-const { MongoClient } = require('mongodb');
+require('dotenv').config()
 
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
-
-let db;
-// Basic Configuration
-try {
-    const client = new MongoClient(process.env.DB_URI);
-    db = client.db("urlshortener")
-} catch (err) {
-    console.log(err)
-}
-const urls = db.collection("urls")
-
-const port = process.env.PORT || 5000;
-
-// Model
-const schema = new mongoose.Schema(
-    {
-        original: { type: String, required: true },
-        short: { type: Number, required: true }
-    }
-);
-
-app.use(cors());
-
-app.use('/public', express.static(`${process.cwd()}/public`));
-
-app.get('/', function (req, res) {
-    res.sendFile(process.cwd() + '/views/index.html');
+app.use(cors())
+app.use(express.static('public'))
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/views/index.html')
 });
 
-// Your first API endpoint
-app.get("/api/shorturl/:input", async (req, res) => {
-    const input = parseInt(req.params.input);
-    
-    await urls.findOne({ short_url: input }, function (err, data) {
-        if (err || data === null) return res.json({"error":"No short URL found for the given input"})
-        return res.redirect(data.url);
-    });
-    
+main().catch(err => console.log(err))
+
+async function main() {
+    await mongoose.connect(process.env.DB_URI)
+}
+
+const userSchema = new Schema({
+    username: { type: String, require: true, unique: true },
+    exercises: [{
+        description: String,
+        duration: Number,
+        date: Date
+    }]
+}, { versionKey: false })
+
+const User = mongoose.model('User', userSchema)
+const ERROR = { error: "There was an error while getting the users." };
+
+app.get('/api/users', (req, res) => {
+    User.find({}, (err, data) => {
+        if (err) return res.send(ERROR)
+        res.json(data)
+    })
 })
 
-app.post("/api/shorturl", async (req, res) => {
-    const url = req.body.url;
-    dns.lookup(urlparser.parse(url).hostname, 
-    async (err, address) => {
-        if(!address){
-            res.json({"error": "Invalid URL"})
+app.get('/api/users/:id/logs', (req, res) => {
+    const id = req.params.id;
+    const dateFrom = new Date(req.query.from);
+    const dateTo = new Date(req.query.to);
+    const limit = parseInt(req.query.limit);
+
+    User.findOne({ _id: new ObjectId(id) }, (err, data) => {
+        if (err) return res.send(ERROR)
+
+        let log = [];
+
+        data.exercises.filter(exercise =>
+            new Date(Date.parse(exercise.date)).getTime() > dateFrom
+            && new Date(Date.parse(exercise.date)).getTime() < dateTo
+        )
+
+        for (const exercise of data.exercises) {
+            log.push({
+                description: exercise.description,
+                duration: exercise.duration,
+                date: new Date(exercise.date).toDateString()
+            })
         }
-        else{
-            const urlCount = await urls.countDocuments({})
-            const urlDoc = {
-                url, 
-                short_url: urlCount
-            }
-            const result = await urls.insertOne(urlDoc)
-            console.log(result);
-            res.json({original_url : url, short_url : urlCount})
+
+        if (limit) log = log.slice(0, limit)
+
+        res.json({
+            _id: data._id,
+            username: data.username,
+            count: log.length,
+            log: log
+        })
+    })
+})
+
+app.post('/api/users', (req, res) => {
+    const username = req.body.username;
+    User.create({ username: username }, (err, data) => {
+            if (err) return res.send(ERROR)
+            res.json({ _id: data._id, username: data.username })
         }
-    });
+    )
+})
 
-});
+app.post('/api/users/:id/exercises', (req, res) => {
+    const id = req.params.id;
+    let { description, duration, date } = req.body;
 
-app.use((req, res, next) => {
-    res.status(404).send('Not Found');
-    next()
-});
+    const newExercise = {
+        description: description,
+        duration: duration,
+        date: date ? new Date(date).toDateString() : new Date().toDateString()
+    };
 
-app.listen(port, function () {
-    console.log(`Listening on port ${port}`);
-});
+    User.findOne({ _id: new ObjectId(id) }, (err, data) => {
+            if (err) return res.send(ERROR)
+            data.exercises.push(newExercise);
+            data.save((err, data) => {
+                const response = {
+                    username: data.username,
+                    description: data.exercises[data.exercises.length - 1].description,
+                    duration: data.exercises[data.exercises.length - 1].duration,
+                    date: new Date(data.exercises[data.exercises.length - 1].date).toDateString(),
+                    _id: data._id
+                };
+
+                res.json(response)
+            })
+        }
+    )
+})
+
+const listener = app.listen(process.env.PORT || 3000, () => {
+    console.log('Your app is listening on port ' + listener.address().port)
+})
