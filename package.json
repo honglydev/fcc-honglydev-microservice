@@ -9,14 +9,10 @@
   "author": "hongly dev",
   "license": "ISC",
   "dependencies": {
-    "body-parser": "^1.19.0",
     "cors": "^2.8.5",
-    "dns": "^0.2.2",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "mongodb": "^4.17.2",
-    "mongoose": "^6.13.1",
-    "url": "^0.11.4"
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "multer": "^1.4.3"
   },
   "description": "This is demo of microservice."
 }
