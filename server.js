@@ -7,18 +7,24 @@ const cors = require('cors');
 const app = express();
 const mongoose = require('mongoose')
 const bodyParser = require('body-parser');
+const dns = require('dns');
+const urlparser = require('url');
+const { MongoClient } = require('mongodb');
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json())
 
+let db;
 // Basic Configuration
 try {
-    mongoose.connect(process.env.DB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+    const client = new MongoClient(process.env.DB_URI);
+    db = client.db("urlshortener")
 } catch (err) {
     console.log(err)
 }
+const urls = db.collection("urls")
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
 // Model
 const schema = new mongoose.Schema(
@@ -27,7 +33,6 @@ const schema = new mongoose.Schema(
         short: { type: Number, required: true }
     }
 );
-const Url = mongoose.model('Url', schema);
 
 app.use(cors());
 
@@ -38,43 +43,40 @@ app.get('/', function (req, res) {
 });
 
 // Your first API endpoint
-app.get("/api/shorturl/:input", (req, res) => {
+app.get("/api/shorturl/:input", async (req, res) => {
     const input = parseInt(req.params.input);
-
-    Url.findOne({ short: input }, function (err, data) {
-        if (err || data === null) return res.json("URL NOT FOUND")
-        return res.redirect(data.original);
+    
+    await urls.findOne({ short_url: input }, function (err, data) {
+        if (err || data === null) return res.json({"error":"No short URL found for the given input"})
+        return res.redirect(data.url);
     });
+    
 })
 
 app.post("/api/shorturl", async (req, res) => {
-    const bodyUrl = req.body.url;
-    let urlRegex = new RegExp(/https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/\/=]*)/);
+    const url = req.body.url;
+    dns.lookup(urlparser.parse(url).hostname, 
+    async (err, address) => {
+        if(!address){
+            res.json({"error": "Invalid URL"})
+        }
+        else{
+            const urlCount = await urls.countDocuments({})
+            const urlDoc = {
+                url, 
+                short_url: urlCount
+            }
+            const result = await urls.insertOne(urlDoc)
+            console.log(result);
+            res.json({original_url : url, short_url : urlCount})
+        }
+    });
 
-    if (!bodyUrl.match(urlRegex)) {
-        return res.json({ error: "Invalid URL" });
-    }
+});
 
-    let index = 1;
-
-    Url.findOne({})
-        .sort({ short: 'desc' })
-        .exec((err, data) => {
-            if (err) return res.json({ error: "No url found." })
-
-            index = data !== null ? data.short + 1 : index;
-
-            Url.findOneAndUpdate(
-                { original: bodyUrl },
-                { original: bodyUrl, short: index },
-                { new: true, upsert: true },
-                (err, newUrl) => {
-                    if (!err) {
-                        res.json({ original_url: bodyUrl, short_url: newUrl.short })
-                    }
-                }
-            )
-        })
+app.use((req, res, next) => {
+    res.status(404).send('Not Found');
+    next()
 });
 
 app.listen(port, function () {
